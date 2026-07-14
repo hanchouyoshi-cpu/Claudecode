@@ -1,0 +1,4 @@
+anthropic>=0.40.0
+numpy
+faster-whisper>=1.0.0
+PyAudioWPatch; sys_platform == "win32"
