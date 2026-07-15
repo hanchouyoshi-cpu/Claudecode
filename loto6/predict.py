@@ -110,6 +110,78 @@ def predict(target_round):
                   "colds": sorted(cold_pick)}
 
 
+def _window_stats(target_round):
+    window = [d for d in DRAWS if target_round - WINDOW <= d[0] < target_round]
+    assert len(window) == WINDOW, f"第{target_round}回の予測にはデータが不足"
+    main_freq = {n: 0 for n in range(0, 45)}
+    comb_freq = {n: 0 for n in range(0, 45)}
+    last_seen = {n: 0 for n in range(0, 45)}
+    for rnd, _, mains, bonus in window:
+        for n in mains:
+            main_freq[n] += 1
+            comb_freq[n] += 1
+            last_seen[n] = max(last_seen[n], rnd)
+        comb_freq[bonus] += 1
+    return window, main_freq, comb_freq, last_seen
+
+
+def portfolio(target_round):
+    """1回の抽選に対して5通りの組合せを提案する。
+
+    どの組合せも当選確率は同一（1等 1/6,096,454）。「期待値」を上げる根拠は
+    確率ではなく賞金の山分け回避——誕生日数字(1〜31)偏重・きれいな並びなど
+    「人が買いがちなパターン」を外すことで、的中時の同着口数を減らす。
+    """
+    window, main_freq, comb_freq, last_seen = _window_stats(target_round)
+    prev = window[-1]
+
+    def cold_rank():
+        colds = [n for n in range(1, 44) if main_freq[n] == 0]
+        return sorted(
+            colds,
+            key=lambda n: (-(comb_freq[n - 1] + comb_freq[n + 1]),
+                           -max(last_seen[n - 1], last_seen[n + 1]), n))
+
+    combos = []
+
+    # C1 逆説コア: R1+R2+R3（predict() と同一）
+    pick, _ = predict(target_round)
+    combos.append(("C1 逆説コア", pick,
+                   "引っ張り2＋スライド2＋コールド2の基本形"))
+
+    # C2 コールド重視: 未出現数字を最大4個＋高数字帯(32-43)の低頻度2個
+    colds = cold_rank()[:4]
+    fill = sorted((n for n in range(32, 44)
+                   if main_freq[n] > 0 and n not in colds),
+                  key=lambda n: (main_freq[n], -n))
+    c2 = sorted(colds + fill[:6 - len(colds)])
+    combos.append(("C2 コールド重視", c2,
+                   "誰も追わない未出現数字＋高数字。山分け回避効果が最大"))
+
+    # C3 高数字EV型: 28-43のみから低頻度順に6個（誕生日数字1-31をほぼ排除）
+    c3 = sorted(sorted(range(28, 44),
+                       key=lambda n: (main_freq[n], -n))[:6])
+    combos.append(("C3 高数字EV型", c3,
+                   "誕生日で選ぶ層(1-31偏重)と被らない構成。合計値の見栄えは捨てる"))
+
+    # C4 引っ張り全張り: 前回頻出2個＋その±1隣接4個
+    _, parts = predict(target_round)
+    carry = parts["carry"]
+    neigh = sorted({c + d for c in carry for d in (-1, 1)}
+                   & set(range(1, 44)) - set(carry))
+    c4 = sorted(set(carry) | set(neigh[:4]))
+    combos.append(("C4 引っ張り全張り", c4,
+                   "引っ張り＋スライドの極端形。連続域は手選びで避けられがち"))
+
+    # C5 ホット順張り: ウィンドウ内頻度トップ6（逆説の逆＝対照用）
+    c5 = sorted(sorted(range(1, 44),
+                       key=lambda n: (-main_freq[n], -last_seen[n], n))[:6])
+    combos.append(("C5 ホット順張り", c5,
+                   "頻度上位6個の順張り。逆説組との対照・分散用"))
+
+    return combos
+
+
 def describe(pick):
     odd = sum(1 for n in pick if n % 2)
     pairs = [(a, b) for a, b in zip(pick, pick[1:]) if b - a == 1]
@@ -143,6 +215,14 @@ def main():
                   f"{' '.join(f'{n:02d}' for n in actual[2])} "
                   f"ボーナス {actual[3]:02d}")
             print(f"一致: {len(hits)}個 {hits}")
+        print(f"--- 第{target}回 ポートフォリオ（5点買い） ---")
+        for name, nums, why in portfolio(target):
+            line = ' '.join(f'{n:02d}' for n in nums)
+            mark = ""
+            if actual:
+                h = sorted(set(nums) & set(actual[2]))
+                mark = f"  → 一致{len(h)}個 {h}"
+            print(f"{name}: {line}  ({why}){mark}")
         print()
 
 
