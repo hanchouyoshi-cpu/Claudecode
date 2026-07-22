@@ -56,6 +56,7 @@ DRAWS = [
     (2118, "2026-07-09", (1, 5, 8, 35, 36, 37), 24),
     (2119, "2026-07-13", (15, 18, 20, 22, 30, 38), 42),
     (2120, "2026-07-16", (3, 8, 13, 14, 16, 43), 26),  # 検証済み
+    (2121, "2026-07-20", (1, 3, 10, 17, 25, 26), 36),  # 検証済み
 ]
 
 WINDOW = 13
@@ -165,12 +166,19 @@ def portfolio(target_round):
     combos.append(("C3 高数字EV型", c3,
                    "誕生日で選ぶ層(1-31偏重)と被らない構成。合計値の見栄えは捨てる"))
 
-    # C4 引っ張り全張り: 前回頻出2個＋その±1隣接4個
+    # C4 引っ張り全張り: 前回頻出2個＋その隣接。引っ張り数字が近接して隣接候補が
+    # 6個に満たない場合は半径を1つずつ広げ、必ず6個そろえる。
     _, parts = predict(target_round)
     carry = parts["carry"]
-    neigh = sorted({c + d for c in carry for d in (-1, 1)}
-                   & set(range(1, 44)) - set(carry))
-    c4 = sorted(set(carry) | set(neigh[:4]))
+    c4 = set(carry)
+    radius = 1
+    while len(c4) < 6 and radius <= 43:
+        for c in carry:
+            for cand in (c - radius, c + radius):
+                if 1 <= cand <= 43 and len(c4) < 6:
+                    c4.add(cand)
+        radius += 1
+    c4 = sorted(c4)
     combos.append(("C4 引っ張り全張り", c4,
                    "引っ張り＋スライドの極端形。連続域は手選びで避けられがち"))
 
@@ -192,7 +200,7 @@ def describe(pick):
 
 def main():
     import sys
-    targets = [int(a) for a in sys.argv[1:]] or [2019, 2020, 2120, 2121]
+    targets = [int(a) for a in sys.argv[1:]] or [2019, 2020, 2120, 2121, 2122]
 
     p_carry = 1 - comb(37, 6) / comb(43, 6)
     p_pair = 1 - comb(38, 6) / comb(43, 6)
